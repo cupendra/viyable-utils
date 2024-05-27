@@ -11,7 +11,12 @@ import java.util.concurrent.TimeUnit;
 
 public class DateUtils {
 
-	public static final String DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm";
+	public static final String INDIA_DATE_FORMAT = "dd-MM-yyyy";
+	public static final String INDIA_DATE_TIME_FORMAT = "dd-MM-yyyy HH:mm:ss";
+	public static final String INDIA_DATE_LONG_FORMAT = "dd-MMM-yyyy";
+	public static final String INDIA_DATE_TIME_LONG_FORMAT = "dd-MMM-yyyy HH:mm:ss";
+	public static final String STANDARD_DATE_FORMAT = "yyyy-MM-dd";
+	public static final String STANDARD_DATE_TIME_FORMAT = "yyyy-MM-dd HH:mm";
 	
 	public static final String []MONTHS = {"", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
 	
@@ -66,7 +71,7 @@ public class DateUtils {
 
 	private static String asDateString(LocalDate localDate, String pattern, boolean upperCaseOnly) {
 		if (pattern == null) {
-			pattern = "dd - MMM - yyyy";
+			pattern = STANDARD_DATE_FORMAT;
 		}
 		String dateString = localDate.format(DateTimeFormatter.ofPattern(pattern));
 		if (upperCaseOnly) {
@@ -78,7 +83,7 @@ public class DateUtils {
 
 	public static String asDateTimeString(Date dateTime) {
 		LocalDateTime localDateTime = asLocalDateTime(dateTime);
-		return asDateTimeString(localDateTime, DATE_TIME_FORMAT);
+		return asDateTimeString(localDateTime, STANDARD_DATE_TIME_FORMAT);
 	}
 
 	public static String asDateTimeString(Date dateTime, String pattern) {
@@ -88,7 +93,7 @@ public class DateUtils {
 
 	private static String asDateTimeString(LocalDateTime localDateTime, String pattern) {
 		if (pattern == null) {
-			pattern = "dd - MMM - yyyy HH:mm:ss";
+			pattern = STANDARD_DATE_TIME_FORMAT;
 		}
 		return localDateTime.format(DateTimeFormatter.ofPattern(pattern)).toUpperCase();
 	}
