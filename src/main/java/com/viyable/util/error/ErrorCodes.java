@@ -32,5 +32,6 @@ public class ErrorCodes {
 	public static final Integer VALID_DATA_NOT_FOUND = 102;
 	public static final Integer INVALID_INPUT_DATA = 103;
 	public static final Integer ALREADY_COMPLETED = 104;
+	public static final Integer RECORD_NOT_FOUND = 105;
 
 }
