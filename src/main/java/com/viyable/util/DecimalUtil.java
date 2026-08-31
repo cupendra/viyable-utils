@@ -20,10 +20,13 @@ public class DecimalUtil {
 		if (value == null) {
 			value = 0d;
 		}
-		Double twoDecimalValue = (double)Math.round(value * 100d) / 100d;//Where number of zeros indicate number of decimal places
-		//Double twoDecimalValue = round(value, 2);
-		//String stringValue = String.format("%.2f", value);
-		System.out.println("Two decimal value: "+twoDecimalValue);
+		// ⚠⚠ NO println HERE. This used to print every value it rounded to stdout. All 24 callers
+		//    are in EmpSalaryUtil, so a payroll run printed twenty-four money figures PER EMPLOYEE
+		//    — salary, allowances, overtime, every deduction — into the container log.
+		// ⚠ stdout bypasses the structured logger entirely, and the PII scrubbing is an
+		//   <includeMdcKeyName> allowlist on the JSON encoder. Anything printed this way is not
+		//   scrubbed because it never passes through the thing that scrubs.
+		Double twoDecimalValue = (double)Math.round(value * 100d) / 100d;
 		return twoDecimalValue;
 	}
 	
@@ -42,12 +45,7 @@ public class DecimalUtil {
 		return stringValue;
 	}
 	
-	public static void main (String args[]){
-		String parsedString = toStringTwoDecimalPlaces(50000.4564d);
-		toStringTwoDecimalPlaces(50000.4564f);
-		Double backToDouble = Double.valueOf(parsedString);
-		System.out.println("Back to double:: "+backToDouble);
-		System.out.println("Back to double:: "+toTwoDecimalPlaces(50000.4564d));
-	}
+	// ⚠ A main() that printed a hardcoded figure lived here — debug scaffolding in a
+	//   shared library, shipped to every service. Removed.
 
 }
