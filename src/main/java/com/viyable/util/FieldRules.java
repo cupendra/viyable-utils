@@ -39,11 +39,28 @@ public final class FieldRules {
      */
     public static final int PHONE_DIGITS = 10;
 
-    /** ⚠ Deliberately loose: an address is checked by SENDING to it, never by a regex claiming to know the grammar. */
-    private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
+    /**
+     * ⚠ Still not a grammar — an address is proved by SENDING to it — but the characters are pinned: a local part, an
+     * at, a domain with a dot and a two-letter-or-longer ending. "Ra@ra.c!@#!@#" used to pass.
+     */
+    private static final Pattern EMAIL =
+            Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}");
 
-    /** A letter in any script — a name is not required to be English. */
-    private static final Pattern HAS_LETTER = Pattern.compile(".*\\p{L}.*");
+    /**
+     * <b>⚠⚠ A NAME IS LETTERS, and the punctuation names really carry</b> (owner, 2026-09-18: the form accepted
+     * "Upendr a@!@3123123^&%&%&#$%"). Letters in ANY script, spaces, and {@code . ' -} for Dr. Rao, O'Brien and
+     * Jean-Luc. Digits and symbols are refused: this is somebody's name, and it is printed on their offer.
+     */
+    private static final Pattern NAME = Pattern.compile("\\p{L}[\\p{L}\\p{M}\\s.'\\-]*");
+
+    /**
+     * Ordinary typed text — a job title, a place. Letters, digits, spaces and the punctuation those carry:
+     * {@code Sr. Engineer (Backend)}, {@code Hyderabad - Unit 2}, {@code Sales & Marketing}.
+     *
+     * <p>⚠ Wider than a name on purpose, and still not "anything": @, #, $, ^, % and the rest belong in no job title
+     * and are how a form becomes a place to paste junk.
+     */
+    private static final Pattern TEXT = Pattern.compile("[\\p{L}\\p{M}\\p{N}\\s.,'&()/\\-]+");
 
     private static final Pattern DIGITS_ONLY = Pattern.compile("\\d+");
 
@@ -56,7 +73,22 @@ public final class FieldRules {
         if (blank(value)) {
             return null;
         }
-        return HAS_LETTER.matcher(value).matches() ? null : "That does not look like " + what + ".";
+        return NAME.matcher(value.trim()).matches() ? null : "That does not look like " + what + ".";
+    }
+
+    /**
+     * Ordinary text: a designation, a work location, a label.
+     *
+     * <p>⚠ Every free-text field gets this unless it is genuinely prose (a note). A box that accepts anything is one
+     * somebody eventually pastes a stack trace into, and it prints on a document afterwards.
+     */
+    public static String textProblem(String value, String what) {
+        if (blank(value)) {
+            return null;
+        }
+        return TEXT.matcher(value.trim()).matches()
+                ? null
+                : what + " can use letters, numbers and . , ' & ( ) / - only.";
     }
 
     public static String emailProblem(String value) {

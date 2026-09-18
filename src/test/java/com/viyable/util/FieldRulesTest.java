@@ -50,17 +50,44 @@ class FieldRulesTest {
     @Test
     void anemailLooksLikeOneOrIsRefused() {
         assertNull(FieldRules.emailProblem("raghu@example.com"));
+        assertNull(FieldRules.emailProblem("first.last+tag@sub.example.co.in"));
         assertEquals("That email address does not look right.",
                 FieldRules.emailProblem("12309183012313123131!@#!@#!@#!@#"));
         assertEquals("That email address does not look right.", FieldRules.emailProblem("asha@example"));
+        // ⚠ Owner's screenshot, 2026-09-18: this reached the form and was accepted by the looser pattern.
+        assertEquals("That email address does not look right.", FieldRules.emailProblem("Ra@ra.c!@#!@#"));
     }
 
-    /** ⚠ Any script: a name is not required to be English. */
+    /**
+     * <b>⚠⚠ A NAME IS LETTERS AND THE PUNCTUATION NAMES CARRY</b> — not "contains a letter somewhere", which let
+     * "Upendr a@!@3123123^&%&%&#$%" through the offer form (owner, 2026-09-18).
+     */
     @Test
-    void anameNeedsALetterInAnyScript() {
+    void anameIsLettersInAnyScriptWithTheirPunctuation() {
         assertNull(FieldRules.nameProblem("Asha Rao", "a name"));
-        assertNull(FieldRules.nameProblem("ಅಶಾ", "a name"));
+        assertNull(FieldRules.nameProblem("ಅಶಾ", "a name"), "any script — a name need not be English");
+        assertNull(FieldRules.nameProblem("Dr. Rao", "a name"));
+        assertNull(FieldRules.nameProblem("O'Brien", "a name"));
+        assertNull(FieldRules.nameProblem("Jean-Luc", "a name"));
+
         assertEquals("That does not look like a name.", FieldRules.nameProblem("12345", "a name"));
+        assertEquals("That does not look like a name.",
+                FieldRules.nameProblem("Upendr a@!@3123123^&%&%&#$%", "a name"));
+        assertEquals("That does not look like a name.", FieldRules.nameProblem("Asha 3", "a name"),
+                "digits belong in no name");
+        assertEquals("That does not look like a name.", FieldRules.nameProblem("'Asha", "a name"),
+                "and it starts with a letter");
+    }
+
+    /** Ordinary typed text: wider than a name, still not anything. */
+    @Test
+    void atextFieldTakesThePunctuationItsContentCarries() {
+        assertNull(FieldRules.textProblem("Sr. Engineer (Backend)", "The designation"));
+        assertNull(FieldRules.textProblem("Hyderabad - Unit 2", "The work location"));
+        assertNull(FieldRules.textProblem("Sales & Marketing", "The designation"));
+
+        assertEquals("The designation can use letters, numbers and . , ' & ( ) / - only.",
+                FieldRules.textProblem("Engineer @#$%^", "The designation"));
     }
 
     /** ⚠ The limit AND the length: "too long" about a 1,000-character note is not actionable. */
