@@ -82,11 +82,18 @@ public final class MoneyText {
 
     /** {@code "₹3,52,551.21"} — symbol from the org's own setting, never hard-coded by a caller. */
     public static String withSymbol(Double amount, String currencyCode, String symbol) {
-        return (symbol == null || symbol.isBlank() ? "" : symbol) + of(amount, currencyCode);
+        return amount == null ? (symbol == null || symbol.isBlank() ? "" : symbol) + of(amount, currencyCode)
+                : withSymbol(amount.doubleValue(), currencyCode, symbol);
     }
 
+    /**
+     * ⚠ THE SIGN GOES BEFORE THE SYMBOL: "-₹10,000.00", never "₹-10,000.00". The second read as a typo on an
+     *   employee's cashbox (owner smoke test, 2026-10-15), and firmland's own Payments list already writes the first.
+     */
     public static String withSymbol(double amount, String currencyCode, String symbol) {
-        return (symbol == null || symbol.isBlank() ? "" : symbol) + of(amount, currencyCode);
+        String sym = symbol == null || symbol.isBlank() ? "" : symbol;
+        String text = of(amount, currencyCode);
+        return text.startsWith("-") ? "-" + sym + text.substring(1) : sym + text;
     }
 
     private static String group(double amount, int firstGroup, int thenGroup) {

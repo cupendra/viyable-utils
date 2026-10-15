@@ -71,6 +71,10 @@ class MoneyTextTest {
     void theSymbolIsSuppliedRatherThanAssumed() {
         assertEquals("\u20B93,52,551.21", MoneyText.withSymbol(352551.21d, "INR", "\u20B9"));
         assertEquals("$352,551.21", MoneyText.withSymbol(352551.21d, "USD", "$"));
+        // ⚠ The sign before the symbol, as firmland's Payments list writes it (smoke test, 2026-10-15).
+        assertEquals("-₹10,000.00", MoneyText.withSymbol(-10000d, "INR", "₹"));
+        assertEquals("-$1,234.50", MoneyText.withSymbol(Double.valueOf(-1234.5d), "USD", "$"));
+        assertEquals("₹0.00", MoneyText.withSymbol(-0.001d, "INR", "₹"), "a rounded zero has no sign");
         assertEquals("352,551.21", MoneyText.withSymbol(352551.21d, "USD", null),
                 "no symbol configured is a missing prefix, not a missing number");
     }
