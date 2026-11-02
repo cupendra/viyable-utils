@@ -21,17 +21,63 @@ class GstCalculatorTest {
 
     // ── the two rules ───────────────────────────────────────────────────────
 
-    /** The prod case: ₹585 at 5% printed CGST 14.63 + SGST 14.63 under a GST total of 29.25. */
+    /**
+     * The prod case: ₹585 at 5% printed CGST 14.63 + SGST 14.63 under a GST total of 29.25. The total
+     * is computed once at the full rate; the halves are its parts, CGST carrying the odd paisa.
+     */
     @Test
-    void halvesAreEqualAndAddUpToTheTotal() {
+    void halvesAddUpToTheTotal() {
         GstCalculator.Result r = GstCalculator.compute(List.of(line("585.00", "5")), null, false, null);
         assertEquals(bd("14.63"), r.cgst());
-        assertEquals(bd("14.63"), r.sgst());
-        assertEquals(bd("29.26"), r.gstTotal());
+        assertEquals(bd("14.62"), r.sgst());
+        assertEquals(bd("29.25"), r.gstTotal());
         assertEquals(r.cgst().add(r.sgst()), r.gstTotal());
-        assertEquals(bd("614.26"), r.grandTotal());
+        assertEquals(bd("614.25"), r.grandTotal());
         assertEquals(bd("614.00"), r.roundedGrandTotal());
-        assertEquals(bd("-0.26"), r.roundOff());
+        assertEquals(bd("-0.25"), r.roundOff());
+    }
+
+    /** Where the buyer is changes how the GST is labelled, never how much it is. */
+    @Test
+    void theTotalIsTheSameWithinAndAcrossStates() {
+        for (String v : new String[]{"585.00", "40005.50", "12.25", "999.99"}) {
+            GstCalculator.Result intra = GstCalculator.compute(List.of(line(v, "18")), null, false, null);
+            GstCalculator.Result inter = GstCalculator.compute(List.of(line(v, "18")), null, true, null);
+            assertEquals(intra.gstTotal(), inter.gstTotal(), v);
+            assertEquals(intra.payable(), inter.payable(), v);
+        }
+    }
+
+    // ── discount before tax ─────────────────────────────────────────────────
+
+    /** GST is due on the discounted value: ₹1000 at 18% less ₹100 is tax on ₹900, not on ₹1000. */
+    @Test
+    void aDiscountBeforeTaxReducesTheTaxableValue() {
+        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(
+                List.of(line("1000.00", "18")), bd("100"), false, null);
+        assertEquals(bd("1000.00"), r.itemsSubtotal());
+        assertEquals(bd("100.00"), r.discount());
+        assertEquals(bd("162.00"), r.gstTotal());
+        assertEquals(bd("1062.00"), r.grandTotal());
+    }
+
+    /** Spread by value across mixed rates; a delivery line takes none of it and no tax. */
+    @Test
+    void theDiscountIsSpreadByValueAndNeverOntoDelivery() {
+        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(List.of(
+                line("600.00", "18"), line("400.00", "5"),
+                new GstCalculator.Line(bd("49.00"), null, false)), bd("100"), false, null);
+        // 600 bears 60, 400 bears 40: 540 × 18% + 360 × 5% = 97.20 + 18.00
+        assertEquals(bd("115.20"), r.gstTotal());
+        assertEquals(bd("1049.00"), r.itemsSubtotal());
+        assertEquals(bd("1064.20"), r.grandTotal());
+    }
+
+    @Test
+    void sharesAlwaysAddUpToTheAmount() {
+        List<GstCalculator.Line> lines = List.of(line("33.33", "5"), line("33.33", "5"), line("33.34", "5"));
+        List<BigDecimal> shares = GstCalculator.spread(bd("10.00"), lines);
+        assertEquals(bd("10.00"), shares.stream().reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
     @Test
@@ -138,8 +184,8 @@ class GstCalculatorTest {
                 if (!old.igst.equals(now.igst().toPlainString())) igstChanged++;
             }
 
-            // Rule 1: halves. Within a paisa of the old split, equal, and adding up.
-            assertEquals(now.cgst(), now.sgst(), ctx);
+            // Rule 1: the halves are parts of the total, within a paisa of each other and adding up.
+            assertTrue(now.cgst().subtract(now.sgst()).abs().compareTo(bd("0.01")) <= 0, ctx);
             assertEquals(now.cgst().add(now.sgst()).add(now.igst()), now.gstTotal(), ctx);
             assertTrue(bd(old.cgst).subtract(now.cgst()).abs().compareTo(bd("0.01")) <= 0, ctx + " cgst");
             if (!old.cgst.equals(now.cgst().toPlainString())) halvesChanged++;
