@@ -35,6 +35,17 @@ class FieldRulesTest {
      * across the product, matching neither a search nor another record.
      */
     @Test
+    void anHsnIsFourSixOrEightDigits() {
+        assertNull(FieldRules.hsnProblem(null));
+        assertNull(FieldRules.hsnProblem("0709"));
+        assertNull(FieldRules.hsnProblem("070990"));
+        assertNull(FieldRules.hsnProblem("07099010"));
+        assertEquals("An HSN or SAC code is digits only.", FieldRules.hsnProblem("GNTS-SMS-01"));
+        assertEquals("An HSN or SAC code is 4, 6 or 8 digits.", FieldRules.hsnProblem("123"));
+        assertEquals("An HSN or SAC code is 4, 6 or 8 digits.", FieldRules.hsnProblem("07099"));
+    }
+
+    @Test
     void aphoneNumberIsTenBareDigits() {
         assertNull(FieldRules.phoneProblem("9902900119"));
         assertNull(FieldRules.phoneProblem("  9902900119  "), "trimmed before judging");

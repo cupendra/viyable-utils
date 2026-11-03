@@ -114,6 +114,26 @@ public final class FieldRules {
     }
 
     /**
+     * <b>An HSN or SAC code: 4, 6 or 8 digits</b> — the shapes GST notifies (CBIC 78/2020-CT: 4 digits up to ₹5 crore
+     * turnover, 6 above, 8 on exports). It prints as the HSN column on every tax invoice, so an SKU typed here
+     * (found 2026-11-03: {@code GNTS-SMS-01}) prints as a tariff code that does not exist.
+     *
+     * <p>⚠ Blank is no problem here: a B2C invoice from a firm under ₹5 crore may leave it out. Requiring it is the
+     * caller's call.
+     */
+    public static String hsnProblem(String value) {
+        if (blank(value)) {
+            return null;
+        }
+        String typed = value.trim();
+        if (!DIGITS_ONLY.matcher(typed).matches()) {
+            return "An HSN or SAC code is digits only.";
+        }
+        int n = typed.length();
+        return n == 4 || n == 6 || n == 8 ? null : "An HSN or SAC code is 4, 6 or 8 digits.";
+    }
+
+    /**
      * ⚠ Says the limit AND the length, because "too long" about a 1,000-character note is not actionable.
      *
      * <p>⚠ The sentence after the field's name is word-for-word the one field-rules.js shows under the box — the screen
