@@ -71,8 +71,9 @@ public final class GstCalculator {
     /**
      * The document's figures, each already at paise.
      *
-     * <p>{@code roundedGrandTotal} is the whole-rupee amount payable and {@code roundOff} the
-     * difference, both {@code null} when the grand total is already a whole rupee.
+     * <p>{@code roundedGrandTotal} is the amount payable after the firm's {@link AmountRounding} and
+     * {@code roundOff} the difference, both {@code null} when rounding changes nothing (the grand total
+     * is already a whole rupee, or the firm does not round).
      */
     public record Result(BigDecimal itemsSubtotal, BigDecimal discount,
                          BigDecimal cgst, BigDecimal sgst, BigDecimal igst, BigDecimal gstTotal,
@@ -94,6 +95,12 @@ public final class GstCalculator {
      * @param tcsPercent   TCS on the tax-inclusive amount; null or 0 = none
      */
     public static Result compute(List<Line> lines, BigDecimal discount, boolean interstate, BigDecimal tcsPercent) {
+        return compute(lines, discount, interstate, tcsPercent, AmountRounding.NEAREST_RUPEE);
+    }
+
+    /** The same, with the firm's rounding applied to the final amount. */
+    public static Result compute(List<Line> lines, BigDecimal discount, boolean interstate, BigDecimal tcsPercent,
+                                 AmountRounding rounding) {
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal taxBase = BigDecimal.ZERO;   // Σ value × rate, unrounded, in rupee-percent
         if (lines != null) {
@@ -103,7 +110,7 @@ public final class GstCalculator {
                 if (line.taxed()) taxBase = taxBase.add(value.multiply(line.ratePercent()));
             }
         }
-        return finish(subtotal, discount == null ? zero() : paise(discount), taxBase, interstate, tcsPercent);
+        return finish(subtotal, discount == null ? zero() : paise(discount), taxBase, interstate, tcsPercent, rounding);
     }
 
     /**
@@ -113,6 +120,12 @@ public final class GstCalculator {
      */
     public static Result computeDiscountBeforeTax(List<Line> lines, BigDecimal discount, boolean interstate,
                                                   BigDecimal tcsPercent) {
+        return computeDiscountBeforeTax(lines, discount, interstate, tcsPercent, AmountRounding.NEAREST_RUPEE);
+    }
+
+    /** The same, with the firm's rounding applied to the final amount. */
+    public static Result computeDiscountBeforeTax(List<Line> lines, BigDecimal discount, boolean interstate,
+                                                  BigDecimal tcsPercent, AmountRounding rounding) {
         List<Line> safe = lines == null ? List.of() : lines;
         BigDecimal disc = discount == null ? zero() : paise(discount);
         List<BigDecimal> shares = spread(disc, safe);
@@ -125,11 +138,11 @@ public final class GstCalculator {
             subtotal = subtotal.add(value);
             if (line.taxed()) taxBase = taxBase.add(value.subtract(shares.get(i)).multiply(line.ratePercent()));
         }
-        return finish(subtotal, disc, taxBase, interstate, tcsPercent);
+        return finish(subtotal, disc, taxBase, interstate, tcsPercent, rounding);
     }
 
     private static Result finish(BigDecimal subtotal, BigDecimal disc, BigDecimal taxBase,
-                                 boolean interstate, BigDecimal tcsPercent) {
+                                 boolean interstate, BigDecimal tcsPercent, AmountRounding rounding) {
         // Rule 1: the total at the full rate, once; the heads are its parts.
         BigDecimal gstTotal = taxBase.divide(HUNDRED, 2, RoundingMode.HALF_UP);
         BigDecimal cgst = zero(), sgst = zero(), igst = zero();
@@ -148,7 +161,8 @@ public final class GstCalculator {
         // Rule 2: the grand total is the sum of the rounded figures printed above it.
         BigDecimal grand = preTcs.add(tcs);
 
-        BigDecimal rounded = grand.setScale(0, RoundingMode.HALF_UP);
+        // Rounding happens here and nowhere else: once, on the final amount.
+        BigDecimal rounded = java.util.Objects.requireNonNull(rounding, "rounding").apply(grand);
         BigDecimal roundOff = rounded.subtract(grand);
         boolean hasRoundOff = roundOff.signum() != 0;
 

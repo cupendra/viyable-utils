@@ -21,7 +21,7 @@ import java.util.Map;
  * <ul>
  *   <li>Each seller's part is a document of its own: its items, its share of the order discount, its
  *       share of the delivery fee, priced by {@link GstCalculator#computeDiscountBeforeTax} and rounded
- *       to a rupee as its invoice will be.</li>
+ *       as its invoice will be — by that seller's {@link AmountRounding}.</li>
  *   <li>The order is charged the SUM of the sellers' payables — never a total rounded separately,
  *       which could differ from the invoices by a rupee for every seller.</li>
  *   <li>Discount and delivery are shared out in proportion to each seller's items, at paise, the last
@@ -59,6 +59,15 @@ public final class OrderPricing {
     }
 
     public static Priced price(List<Item> items, BigDecimal discount, BigDecimal deliveryFee) {
+        return price(items, discount, deliveryFee, seller -> AmountRounding.NEAREST_RUPEE);
+    }
+
+    /**
+     * The order, each seller's part rounded by THAT seller's setting — every seller invoices their own
+     * part, so it is their rounding the customer's charge has to match.
+     */
+    public static Priced price(List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
+                               java.util.function.Function<String, AmountRounding> roundingOfSeller) {
         Map<String, List<Item>> bySeller = new TreeMap<>();
         for (Item item : items) {
             bySeller.computeIfAbsent(item.sellerKey(), k -> new ArrayList<>()).add(item);
@@ -78,7 +87,8 @@ public final class OrderPricing {
         BigDecimal subtotal = BigDecimal.ZERO, gst = BigDecimal.ZERO, payable = BigDecimal.ZERO;
         BigDecimal disc = BigDecimal.ZERO, delivery = BigDecimal.ZERO;
         for (int i = 0; i < keys.size(); i++) {
-            SellerPart part = priceSeller(keys.get(i), bySeller.get(keys.get(i)), discounts.get(i), deliveries.get(i));
+            SellerPart part = priceSeller(keys.get(i), bySeller.get(keys.get(i)), discounts.get(i), deliveries.get(i),
+                    false, null, roundingOfSeller.apply(keys.get(i)));
             parts.add(part);
             subtotal = subtotal.add(part.amounts().itemsSubtotal()).subtract(part.deliveryFee());
             gst = gst.add(part.amounts().gstTotal());
@@ -94,7 +104,7 @@ public final class OrderPricing {
      * invoice a fulfilment group with the shares it stored, so the invoice and the charge cannot drift.
      */
     public static SellerPart priceSeller(String sellerKey, List<Item> items, BigDecimal discount, BigDecimal deliveryFee) {
-        return priceSeller(sellerKey, items, discount, deliveryFee, false, null);
+        return priceSeller(sellerKey, items, discount, deliveryFee, false, null, AmountRounding.NEAREST_RUPEE);
     }
 
     /**
@@ -104,11 +114,20 @@ public final class OrderPricing {
      */
     public static SellerPart priceSeller(String sellerKey, List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
                                          boolean interstate, BigDecimal tcsPercent) {
+        return priceSeller(sellerKey, items, discount, deliveryFee, interstate, tcsPercent, AmountRounding.NEAREST_RUPEE);
+    }
+
+    /**
+     * The same, rounded as {@code rounding} says — for an order, the rounding stamped on it when it
+     * was charged, never the firm's current setting.
+     */
+    public static SellerPart priceSeller(String sellerKey, List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
+                                         boolean interstate, BigDecimal tcsPercent, AmountRounding rounding) {
         List<GstCalculator.Line> lines = new ArrayList<>();
         for (Item item : items) lines.add(new GstCalculator.Line(item.value(), item.ratePercent(), true));
         BigDecimal delivery = GstCalculator.paise(deliveryFee);
         if (delivery.signum() != 0) lines.add(new GstCalculator.Line(delivery, null, false));
-        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines, discount, interstate, tcsPercent);
+        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines, discount, interstate, tcsPercent, rounding);
         return new SellerPart(sellerKey, GstCalculator.paise(discount), delivery, r);
     }
 
