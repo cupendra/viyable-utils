@@ -173,6 +173,96 @@ public final class GstCalculator {
                 hasRoundOff ? rounded.setScale(2) : null);
     }
 
+    /** One row of a document's HSN / SAC summary: every taxed line of one code at one rate, added up. */
+    public record HsnRow(String hsn, BigDecimal ratePercent, BigDecimal taxable,
+                         BigDecimal cgst, BigDecimal sgst, BigDecimal igst, BigDecimal tax) {}
+
+    /**
+     * The HSN / SAC summary of the document {@code r} was computed for: one row per (code, rate), in the
+     * order the codes first appear.
+     *
+     * <p><b>⚠ A TOTAL AND ITS BREAKDOWN COME FROM THE SAME DATA (D17, found 2026-11-03).</b> The template
+     * used to print a row per LINE, taxing each line's undiscounted value and halving it on its own, so on a
+     * discounted invoice the summary did not add up to the GST the same page charged. Here each row's taxable
+     * value is what the document taxed (after a before-tax discount, when the document was priced that way),
+     * and the document's GST and CGST are SHARED across the rows (largest remainder, at paise), so the rows
+     * add up to the totals printed beside them exactly.
+     *
+     * @param hsnCodes          one per line, parallel to {@code lines}; null or blank prints as "-"
+     * @param discountBeforeTax true when {@code r} came from {@link #computeDiscountBeforeTax}
+     */
+    public static List<HsnRow> hsnSummary(List<Line> lines, List<String> hsnCodes, boolean discountBeforeTax,
+                                          boolean interstate, Result r) {
+        List<HsnRow> rows = new ArrayList<>();
+        if (lines == null || lines.isEmpty() || r == null) return rows;
+        List<BigDecimal> shares = discountBeforeTax ? spread(r.discount(), lines) : null;
+
+        java.util.LinkedHashMap<String, BigDecimal[]> groups = new java.util.LinkedHashMap<>(); // taxable, exact tax
+        java.util.Map<String, String[]> keys = new java.util.HashMap<>();
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            if (!line.taxed()) continue;
+            String code = hsnCodes != null && i < hsnCodes.size() ? hsnCodes.get(i) : null;
+            String hsn = code != null && !code.isBlank() ? code.trim() : "-";
+            BigDecimal rate = line.ratePercent().stripTrailingZeros();
+            String key = hsn + "|" + rate.toPlainString();
+            BigDecimal taxable = paise(line.value()).subtract(shares == null ? BigDecimal.ZERO : shares.get(i));
+            BigDecimal[] g = groups.computeIfAbsent(key, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            g[0] = g[0].add(taxable);
+            g[1] = g[1].add(taxable.multiply(line.ratePercent()).divide(HUNDRED, 10, RoundingMode.HALF_UP));
+            keys.put(key, new String[]{hsn, rate.toPlainString()});
+        }
+        if (groups.isEmpty()) return rows;
+
+        List<String> order = new ArrayList<>(groups.keySet());
+        List<BigDecimal> exact = new ArrayList<>();
+        for (String k : order) exact.add(groups.get(k)[1]);
+        List<BigDecimal> tax = allocate(r.gstTotal(), exact);
+
+        List<BigDecimal> halves = new ArrayList<>();
+        for (BigDecimal t : tax) halves.add(t.divide(TWO, 10, RoundingMode.HALF_UP));
+        List<BigDecimal> cgst = interstate ? null : allocate(r.cgst(), halves);
+
+        for (int i = 0; i < order.size(); i++) {
+            String[] k = keys.get(order.get(i));
+            BigDecimal t = tax.get(i);
+            BigDecimal c = interstate ? zero() : cgst.get(i);
+            BigDecimal sg = interstate ? zero() : t.subtract(c);
+            rows.add(new HsnRow(k[0], new BigDecimal(k[1]), paise(groups.get(order.get(i))[0]),
+                    c, sg, interstate ? t : zero(), t));
+        }
+        return rows;
+    }
+
+    /**
+     * {@code total} (at paise) shared in proportion to {@code exact}: each share floored to paise, and the
+     * paise left over given to the largest remainders, so the shares add up to {@code total} exactly.
+     */
+    static List<BigDecimal> allocate(BigDecimal total, List<BigDecimal> exact) {
+        List<BigDecimal> out = new ArrayList<>();
+        BigDecimal sum = BigDecimal.ZERO;
+        for (BigDecimal e : exact) sum = sum.add(e);
+        BigDecimal given = BigDecimal.ZERO;
+        List<BigDecimal> remainders = new ArrayList<>();
+        for (BigDecimal e : exact) {
+            BigDecimal ideal = sum.signum() == 0 ? BigDecimal.ZERO
+                    : total.multiply(e).divide(sum, 10, RoundingMode.HALF_UP);
+            BigDecimal floor = ideal.setScale(2, RoundingMode.FLOOR);
+            out.add(floor);
+            remainders.add(ideal.subtract(floor));
+            given = given.add(floor);
+        }
+        int left = total.subtract(given).movePointRight(2).intValue();
+        List<Integer> idx = new ArrayList<>();
+        for (int i = 0; i < out.size(); i++) idx.add(i);
+        idx.sort((x, y) -> remainders.get(y).compareTo(remainders.get(x)));
+        for (int j = 0; j < left && j < idx.size(); j++) {
+            int i = idx.get(j);
+            out.set(i, out.get(i).add(new BigDecimal("0.01")));
+        }
+        return out;
+    }
+
     /**
      * An amount spread over the discountable lines in proportion to their value, each share at
      * paise, the last discountable line taking the remainder so the shares add up exactly.

@@ -19,6 +19,64 @@ class GstCalculatorTest {
         return new GstCalculator.Line(bd(value), rate == null ? null : bd(rate));
     }
 
+    // ── the HSN summary (D17) ───────────────────────────────────────────────
+
+    /**
+     * Two lines of one HSN and rate are ONE row; a discount before tax lowers the taxable value; and the
+     * rows add up to the document's own GST, CGST and SGST to the paisa.
+     */
+    @Test
+    void theHsnSummaryGroupsByCodeAndRateAndAddsUpToTheDocument() {
+        List<GstCalculator.Line> lines = List.of(line("585.00", "5"), line("333.33", "5"), line("199.99", "18"));
+        List<String> hsn = List.of("0709", "0709", "9026");
+        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines, bd("50"), false, null);
+
+        List<GstCalculator.HsnRow> rows = GstCalculator.hsnSummary(lines, hsn, true, false, r);
+
+        assertEquals(2, rows.size(), "one row per code and rate");
+        assertEquals("0709", rows.get(0).hsn());
+        BigDecimal tax = BigDecimal.ZERO, cgst = BigDecimal.ZERO, sgst = BigDecimal.ZERO, taxable = BigDecimal.ZERO;
+        for (GstCalculator.HsnRow row : rows) {
+            tax = tax.add(row.tax());
+            cgst = cgst.add(row.cgst());
+            sgst = sgst.add(row.sgst());
+            taxable = taxable.add(row.taxable());
+            assertEquals(row.tax(), row.cgst().add(row.sgst()));
+        }
+        assertEquals(r.gstTotal(), tax);
+        assertEquals(r.cgst(), cgst);
+        assertEquals(r.sgst(), sgst);
+        assertEquals(r.itemsSubtotal().subtract(r.discount()), taxable, "the taxable value is what was taxed");
+    }
+
+    /** Over many random documents the rows still add up to the document's GST, CGST and IGST exactly. */
+    @Test
+    void theSummaryAddsUpOverManyRandomDocuments() {
+        Random rnd = new Random(7);
+        String[] rates = {"5", "12", "18", "28"};
+        for (int n = 0; n < 2000; n++) {
+            List<GstCalculator.Line> lines = new ArrayList<>();
+            List<String> hsn = new ArrayList<>();
+            int count = 1 + rnd.nextInt(6);
+            for (int i = 0; i < count; i++) {
+                lines.add(line(BigDecimal.valueOf(rnd.nextInt(100000), 2).toPlainString(), rates[rnd.nextInt(4)]));
+                hsn.add(String.valueOf(1000 + rnd.nextInt(3)));
+            }
+            boolean inter = rnd.nextBoolean();
+            GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines,
+                    BigDecimal.valueOf(rnd.nextInt(1000), 2), inter, null);
+            BigDecimal tax = BigDecimal.ZERO, cgst = BigDecimal.ZERO, igst = BigDecimal.ZERO;
+            for (GstCalculator.HsnRow row : GstCalculator.hsnSummary(lines, hsn, true, inter, r)) {
+                tax = tax.add(row.tax());
+                cgst = cgst.add(row.cgst());
+                igst = igst.add(row.igst());
+            }
+            assertEquals(r.gstTotal(), tax, "document " + n);
+            assertEquals(r.cgst(), cgst, "document " + n);
+            assertEquals(r.igst(), igst, "document " + n);
+        }
+    }
+
     // ── the two rules ───────────────────────────────────────────────────────
 
     /**
