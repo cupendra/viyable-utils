@@ -77,6 +77,24 @@ class GstCalculatorTest {
         }
     }
 
+    /** A3: the lines carry the document's own heads and add up to them exactly; untaxed lines carry none. */
+    @Test
+    void lineRowsAddUpToTheDocument() {
+        List<GstCalculator.Line> lines = List.of(line("585.00", "5"), line("199.99", "18"),
+                new GstCalculator.Line(bd("49.00"), null, false));
+        GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines, bd("50"), false, null);
+
+        List<GstCalculator.LineRow> rows = GstCalculator.lineRows(lines, r.discount(), r.cgst(), r.sgst(), r.igst());
+
+        BigDecimal c = BigDecimal.ZERO, s = BigDecimal.ZERO, t = BigDecimal.ZERO;
+        for (GstCalculator.LineRow row : rows) { c = c.add(row.cgst()); s = s.add(row.sgst()); t = t.add(row.taxable()); }
+        assertEquals(r.cgst(), c);
+        assertEquals(r.sgst(), s);
+        assertEquals(r.itemsSubtotal().subtract(r.discount()), t);
+        assertEquals(0, rows.get(2).cgst().signum(), "the delivery line carries no tax");
+        assertEquals(bd("49.00"), rows.get(2).taxable(), "and no discount");
+    }
+
     // ── the two rules ───────────────────────────────────────────────────────
 
     /**

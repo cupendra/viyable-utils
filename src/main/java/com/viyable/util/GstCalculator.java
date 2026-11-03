@@ -234,6 +234,39 @@ public final class GstCalculator {
         return rows;
     }
 
+    /** One line of a document as the register and the books read it: what was taxed, and its share of each head. */
+    public record LineRow(BigDecimal taxable, BigDecimal cgst, BigDecimal sgst, BigDecimal igst) {}
+
+    /**
+     * Each line of a document with the figures the document itself printed (A3): its taxable value (its value
+     * less its share of the document discount, which GST deducts from the taxable value), and its share of the
+     * document's CGST, SGST and IGST (largest remainder, at paise) — so the lines always add up to the totals on
+     * the page, whichever arithmetic produced them.
+     *
+     * @param discount the document's discount (0 or null = none); spread over the discountable lines
+     */
+    public static List<LineRow> lineRows(List<Line> lines, BigDecimal discount,
+                                         BigDecimal cgst, BigDecimal sgst, BigDecimal igst) {
+        List<LineRow> rows = new ArrayList<>();
+        if (lines == null || lines.isEmpty()) return rows;
+        BigDecimal disc = discount == null ? zero() : paise(discount);
+        List<BigDecimal> shares = spread(disc, lines);
+        List<BigDecimal> exact = new ArrayList<>();
+        List<BigDecimal> taxable = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            BigDecimal t = paise(lines.get(i).value()).subtract(shares.get(i));
+            taxable.add(t);
+            exact.add(lines.get(i).taxed()
+                    ? t.multiply(lines.get(i).ratePercent()).divide(HUNDRED, 10, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO);
+        }
+        List<BigDecimal> c = allocate(paise(cgst), exact);
+        List<BigDecimal> s = allocate(paise(sgst), exact);
+        List<BigDecimal> g = allocate(paise(igst), exact);
+        for (int i = 0; i < lines.size(); i++) rows.add(new LineRow(taxable.get(i), c.get(i), s.get(i), g.get(i)));
+        return rows;
+    }
+
     /**
      * {@code total} (at paise) shared in proportion to {@code exact}: each share floored to paise, and the
      * paise left over given to the largest remainders, so the shares add up to {@code total} exactly.
