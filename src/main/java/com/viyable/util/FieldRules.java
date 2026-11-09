@@ -63,6 +63,7 @@ public final class FieldRules {
     private static final Pattern TEXT = Pattern.compile("[\\p{L}\\p{M}\\p{N}\\s.,'&()/\\-]+");
 
     private static final Pattern DIGITS_ONLY = Pattern.compile("\\d+");
+    private static final Pattern IFSC = Pattern.compile("[A-Z]{4}0[A-Z0-9]{6}");
 
     public static boolean blank(String value) {
         return value == null || value.trim().isEmpty();
@@ -131,6 +132,35 @@ public final class FieldRules {
         }
         int n = typed.length();
         return n == 4 || n == 6 || n == 8 ? null : "An HSN or SAC code is 4, 6 or 8 digits.";
+    }
+
+    /**
+     * <b>An Indian bank account number: 9 to 18 digits</b>, the lengths the banks issue. Spaces are refused rather than
+     * stripped, as for a phone number, so one account is never stored in two shapes.
+     *
+     * <p>⚠ Blank is no problem here: a firm may add the account before it has the number to hand.
+     */
+    public static String bankAccountProblem(String value) {
+        if (blank(value)) {
+            return null;
+        }
+        String typed = value.trim();
+        if (!DIGITS_ONLY.matcher(typed).matches()) {
+            return "A bank account number is digits only.";
+        }
+        return typed.length() >= 9 && typed.length() <= 18 ? null : "A bank account number is 9 to 18 digits.";
+    }
+
+    /**
+     * <b>An IFSC: 11 characters — four capital letters, a zero, then six capital letters or digits</b> (RBI's format).
+     * Capitals only, so one branch is never stored in two shapes. Blank is no problem here, as above.
+     */
+    public static String ifscProblem(String value) {
+        if (blank(value)) {
+            return null;
+        }
+        return IFSC.matcher(value.trim()).matches() ? null
+                : "An IFSC is 11 characters: four capital letters, a zero, then six capital letters or digits.";
     }
 
     /**

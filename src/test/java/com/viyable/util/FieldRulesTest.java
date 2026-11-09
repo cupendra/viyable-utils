@@ -131,4 +131,28 @@ class FieldRulesTest {
         FieldRules.collect(problems, null, "A problem.", null, "Another.");
         assertEquals(List.of("A problem.", "Another."), problems);
     }
+
+    @org.junit.jupiter.api.Test
+    void aBankAccountNumberIsNineToEighteenDigits() {
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.bankAccountProblem("123456789"));
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.bankAccountProblem("123456789012345678"));
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.bankAccountProblem(""));
+        org.junit.jupiter.api.Assertions.assertEquals("A bank account number is digits only.",
+                FieldRules.bankAccountProblem("1234 5678 9012"));
+        org.junit.jupiter.api.Assertions.assertEquals("A bank account number is 9 to 18 digits.",
+                FieldRules.bankAccountProblem("12345678"));
+        org.junit.jupiter.api.Assertions.assertEquals("A bank account number is 9 to 18 digits.",
+                FieldRules.bankAccountProblem("1234567890123456789"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void anIfscIsFourLettersAZeroAndSixMore() {
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.ifscProblem("HDFC0001234"));
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.ifscProblem("SBIN0ABC123"));
+        org.junit.jupiter.api.Assertions.assertNull(FieldRules.ifscProblem(" "));
+        String sentence = "An IFSC is 11 characters: four capital letters, a zero, then six capital letters or digits.";
+        org.junit.jupiter.api.Assertions.assertEquals(sentence, FieldRules.ifscProblem("hdfc0001234"));
+        org.junit.jupiter.api.Assertions.assertEquals(sentence, FieldRules.ifscProblem("HDFC1001234"));
+        org.junit.jupiter.api.Assertions.assertEquals(sentence, FieldRules.ifscProblem("HDFC000123"));
+    }
 }
