@@ -85,6 +85,16 @@ class FirmTimeTest {
     }
 
     @Test
+    void aStoredDayShowsAsWritten_anInstantShowsAsTheFirmsDay() {
+        Date stored = FirmTime.storedDay(LocalDate.of(2026, 4, 1));
+        assertEquals(LocalDate.of(2026, 4, 1), FirmTime.dayToShow(stored, INDIA));
+        assertEquals(LocalDate.of(2026, 4, 1), FirmTime.dayToShow(stored, ZoneId.of("America/New_York")), "a day is not shifted west");
+        Date halfPastMidnight = Date.from(ZonedDateTime.of(2026, 4, 1, 0, 30, 0, 0, INDIA).toInstant());
+        assertEquals(LocalDate.of(2026, 4, 1), FirmTime.dayToShow(halfPastMidnight, INDIA), "an instant is the firm's day");
+        assertNull(FirmTime.dayToShow(null, INDIA));
+    }
+
+    @Test
     void anInstantCrossesTheWireAsIsoUtc() {
         Date placed = Date.from(ZonedDateTime.of(2026, 11, 13, 22, 16, 5, 0, INDIA).toInstant());
         assertEquals("2026-11-13T16:46:05Z", FirmTime.isoInstant(placed));

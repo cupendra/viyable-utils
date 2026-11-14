@@ -121,6 +121,19 @@ public final class FirmTime {
         return day == null ? null : new Date(endOf(day, firmZone).getTime() - 1);
     }
 
+    /**
+     * The day to SHOW for a {@code java.util.Date} whose kind the screen does not know — an instant ("created at") or an
+     * old stored day (midnight in the server zone). A stored day is recognised by being exactly midnight in the server
+     * zone and is read back as written ({@link #storedDayOf}), so it never shifts; anything else is an instant and shows
+     * as the firm's day ({@link #dayOf}). Only an instant at exactly 00:00:00.000 server time is read the other way, and
+     * for a firm east of the server (all of India) both readings give the same day.
+     */
+    public static LocalDate dayToShow(Date value, ZoneId firmZone) {
+        if (value == null) return null;
+        java.time.ZonedDateTime server = value.toInstant().atZone(ZoneId.systemDefault());
+        return server.toLocalTime().equals(LocalTime.MIDNIGHT) ? server.toLocalDate() : dayOf(value, firmZone);
+    }
+
     /** Whether a document dated {@code documentDate} sits in the firm's current month (the open tax period). */
     public static boolean inThisMonth(Date documentDate, ZoneId firmZone, Clock clock) {
         if (documentDate == null) return false;
