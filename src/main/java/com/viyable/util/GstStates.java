@@ -74,6 +74,66 @@ public final class GstStates {
         return CODE_BY_NAME.get(normalise(stateName));
     }
 
+    /**
+     * The GST code of a place of supply as documents have stored it: a bare code ("36", "7"), a name ("Telangana"),
+     * a name with its code ("Telangana (36)") or the return's own form ("36-Telangana"). When a code and a name are
+     * both written they must agree, else null — a document saying "Karnataka (36)" is not placed by guessing which
+     * half is right. Null when nothing maps.
+     */
+    public static String placeCode(String written) {
+        if (written == null || written.isBlank()) return null;
+        String t = written.trim();
+        java.util.regex.Matcher m = CODE_IN_TEXT.matcher(t);
+        String code = null;
+        String name = t;
+        if (t.matches("\\d{1,2}")) {
+            code = t;
+            name = null;
+        } else if (m.matches()) {
+            code = m.group(2) != null ? m.group(2) : m.group(3);
+            name = m.group(2) != null ? m.group(1) : m.group(4);
+        }
+        if (code != null) {
+            code = code.length() == 1 ? "0" + code : code;
+            if (!LABEL_BY_CODE.containsKey(code)) return null;
+            if (name == null || name.isBlank()) return code;
+            String named = codeOf(name);
+            return named == null || named.equals(code) ? code : null;
+        }
+        return codeOf(name);
+    }
+
+    /** "Name (36)" or "36-Name" / "36 - Name". */
+    private static final java.util.regex.Pattern CODE_IN_TEXT =
+            java.util.regex.Pattern.compile("^(.*?)\\s*\\(\\s*(\\d{1,2})\\s*\\)\\s*$|^(\\d{1,2})\\s*-\\s*(.+)$");
+
+    /**
+     * The place-of-supply string GSTN's GSTR-1 template accepts for a code, byte for byte ("36-Telangana",
+     * "31-Lakshdweep" sic, "26-Dadra & Nagar Haveli & Daman & Diu"), or null for an unknown code. From the
+     * template V2.2 {@code master} sheet; "96-Foreign Country" is the e-commerce/export list's extra entry.
+     */
+    public static String templateLabel(String code) {
+        if (code == null) return null;
+        String c = code.trim();
+        if (c.length() == 1) c = "0" + c;
+        return LABEL_BY_CODE.get(c);
+    }
+
+    private static final Map<String, String> LABEL_BY_CODE = new HashMap<>();
+
+    static {
+        String[] labels = {
+                "01-Jammu & Kashmir", "02-Himachal Pradesh", "03-Punjab", "04-Chandigarh", "05-Uttarakhand",
+                "06-Haryana", "07-Delhi", "08-Rajasthan", "09-Uttar Pradesh", "10-Bihar", "11-Sikkim",
+                "12-Arunachal Pradesh", "13-Nagaland", "14-Manipur", "15-Mizoram", "16-Tripura", "17-Meghalaya",
+                "18-Assam", "19-West Bengal", "20-Jharkhand", "21-Odisha", "22-Chhattisgarh", "23-Madhya Pradesh",
+                "24-Gujarat", "25-Daman & Diu", "26-Dadra & Nagar Haveli & Daman & Diu", "27-Maharashtra",
+                "29-Karnataka", "30-Goa", "31-Lakshdweep", "32-Kerala", "33-Tamil Nadu", "34-Puducherry",
+                "35-Andaman & Nicobar Islands", "36-Telangana", "37-Andhra Pradesh", "38-Ladakh",
+                "96-Foreign Country", "97-Other Territory"};
+        for (String l : labels) LABEL_BY_CODE.put(l.substring(0, 2), l);
+    }
+
     /** A GSTIN's state: its first two digits. Null when there is no GSTIN or it does not start with two digits. */
     public static String codeOfGstin(String gstin) {
         if (gstin == null) return null;
