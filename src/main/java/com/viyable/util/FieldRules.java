@@ -163,6 +163,44 @@ public final class FieldRules {
                 : "An IFSC is 11 characters: four capital letters, a zero, then six capital letters or digits.";
     }
 
+    private static final Pattern NUMBER_CODE_CHARS = Pattern.compile("[A-Z0-9]+");
+
+    /**
+     * <b>The firm's own code in its document numbers</b> ({@code GNTS} in {@code GNTS/2627/000005}),
+     * ACCOUNTING_PLAN.md §17.13.7–9: capital letters and digits, starting with a letter, at most {@code maxLength}.
+     * Capitals only, so one code is never stored in two shapes.
+     *
+     * <p>⚠⚠ NEITHER THE LIMIT NOR THE RESERVED CODES ARE HELD HERE — both are data (owner rule 2026-11-25: viyable-utils
+     * is never a data store). {@code maxLength} is the smallest {@link DocumentNumberPattern#roomForFirmCode} over every
+     * offered pattern, so no offered format can overflow 16 characters with any code this accepts; {@code reserved}
+     * maps each document type's code to its name, from firmland's catalogue. A code equal to a type's code is refused
+     * because an invoice numbered with it would read as that type ({@code CN/2627/000005} as a credit note).
+     *
+     * @param reserved document code → type name ("CN" → "Credit note"); may be empty, never null
+     */
+    public static String numberCodeProblem(String value, int maxLength, java.util.Map<String, String> reserved) {
+        if (blank(value)) {
+            return null;
+        }
+        String code = value.trim();
+        if (!NUMBER_CODE_CHARS.matcher(code).matches()) {
+            return "Your code takes capital letters A to Z and digits only.";
+        }
+        if (!Character.isLetter(code.charAt(0))) {
+            return "Your code starts with a letter.";
+        }
+        if (code.length() > maxLength) {
+            return "Your code is at most " + maxLength + " characters, so every document number fits GST's limit of "
+                    + DocumentNumberPattern.GST_MAX_LENGTH + "; this is " + code.length() + ".";
+        }
+        String type = reserved.get(code);
+        if (type != null) {
+            return code + " is the code for a " + Character.toLowerCase(type.charAt(0)) + type.substring(1)
+                    + ", so a number carrying it would read as one. Choose another code.";
+        }
+        return null;
+    }
+
     /**
      * ⚠ Says the limit AND the length, because "too long" about a 1,000-character note is not actionable.
      *

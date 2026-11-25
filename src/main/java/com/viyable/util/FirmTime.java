@@ -147,6 +147,29 @@ public final class FirmTime {
         return start + "-" + String.format("%02d", (start + 1) % 100);
     }
 
+    private static final java.util.regex.Pattern FY_LABEL = java.util.regex.Pattern.compile("(\\d{2})(\\d{2})-(\\d{2})");
+
+    /**
+     * A financial-year label written short, {@code "2026-27"} → {@code "2627"}: the form document numbers carry, because
+     * GST allows a number only 16 characters (ACCOUNTING_PLAN.md §17.13.6) and the long form spends three of them.
+     *
+     * <p>⚠ Refuses anything that is not a consecutive {@code yyyy-yy} label rather than cutting characters out of it — a
+     * mangled year inside a tax document's number cannot be corrected once the document is issued.
+     */
+    public static String shortFinancialYear(String fyLabel) {
+        java.util.regex.Matcher m = fyLabel == null ? null : FY_LABEL.matcher(fyLabel);
+        if (m == null || !m.matches()
+                || (Integer.parseInt(m.group(2)) + 1) % 100 != Integer.parseInt(m.group(3))) {
+            throw new IllegalArgumentException("Not a financial year label like 2026-27: " + fyLabel);
+        }
+        return m.group(2) + m.group(3);
+    }
+
+    /** {@link #shortFinancialYear(String)} of the financial year a day falls in: 15 Nov 2026 → {@code "2627"}. */
+    public static String shortFinancialYear(LocalDate day) {
+        return shortFinancialYear(financialYear(day));
+    }
+
     // ── instants on the wire (release 2) ──────────────────────────────────────────────────────────────────
 
     /**

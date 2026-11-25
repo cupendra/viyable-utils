@@ -155,4 +155,28 @@ class FieldRulesTest {
         org.junit.jupiter.api.Assertions.assertEquals(sentence, FieldRules.ifscProblem("HDFC1001234"));
         org.junit.jupiter.api.Assertions.assertEquals(sentence, FieldRules.ifscProblem("HDFC000123"));
     }
+
+    /**
+     * The firm's code in its document numbers (ACCOUNTING_PLAN.md §17.13.9). ⚠ The limit and the reserved codes are
+     * handed in (data, from firmland's catalogue), never held by the rule.
+     */
+    @Test
+    void aNumberCodeIsCapitalsAndDigitsFromALetterWithinTheLimitAndNoTypesCode() {
+        java.util.Map<String, String> reserved = java.util.Map.of("CN", "Credit note", "SCR", "Scrap invoice");
+        assertNull(FieldRules.numberCodeProblem(null, 4, reserved));
+        assertNull(FieldRules.numberCodeProblem(" ", 4, reserved));
+        assertNull(FieldRules.numberCodeProblem("GNTS", 4, reserved));
+        assertNull(FieldRules.numberCodeProblem("AFX2", 4, reserved));
+        assertNull(FieldRules.numberCodeProblem("G", 4, reserved));
+        assertEquals("Your code takes capital letters A to Z and digits only.",
+                FieldRules.numberCodeProblem("gnts", 4, reserved));
+        assertEquals("Your code takes capital letters A to Z and digits only.",
+                FieldRules.numberCodeProblem("G-1", 4, reserved));
+        assertEquals("Your code starts with a letter.", FieldRules.numberCodeProblem("1ABC", 4, reserved));
+        assertEquals("Your code is at most 4 characters, so every document number fits GST's limit of 16; this is 5.",
+                FieldRules.numberCodeProblem("ABCDE", 4, reserved));
+        assertEquals("CN is the code for a credit note, so a number carrying it would read as one. Choose another code.",
+                FieldRules.numberCodeProblem("CN", 4, reserved));
+        assertNull(FieldRules.numberCodeProblem("CN", 4, java.util.Map.of()));
+    }
 }

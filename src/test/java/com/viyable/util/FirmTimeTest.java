@@ -100,4 +100,17 @@ class FirmTimeTest {
         assertEquals("2026-11-13T16:46:05Z", FirmTime.isoInstant(placed));
         assertNull(FirmTime.isoInstant((Date) null));
     }
+
+    /** The year as a document number carries it (ACCOUNTING_PLAN.md §17.13.6): "2026-27" → "2627". */
+    @Test
+    void theShortYearIsTheTwoTwoDigitHalves() {
+        assertEquals("2627", FirmTime.shortFinancialYear("2026-27"));
+        assertEquals("9900", FirmTime.shortFinancialYear("2099-00"));
+        assertEquals("2627", FirmTime.shortFinancialYear(LocalDate.of(2027, 3, 31)));
+        assertEquals("2728", FirmTime.shortFinancialYear(LocalDate.of(2027, 4, 1)));
+        for (String bad : new String[] {"2026-28", "2026/27", "26-27", "2026-2027", "", null}) {
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                    () -> FirmTime.shortFinancialYear(bad), String.valueOf(bad));
+        }
+    }
 }
