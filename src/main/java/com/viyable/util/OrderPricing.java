@@ -26,8 +26,10 @@ import java.util.Map;
  *       which could differ from the invoices by a rupee for every seller.</li>
  *   <li>Discount and delivery are shared out in proportion to each seller's items, at paise, the last
  *       seller taking the remainder — so the shares add up exactly.</li>
- *   <li>Delivery is a line of its own, untaxed and not discounted — the arithmetic both sides have
- *       always used.</li>
+ *   <li>Delivery is never discounted. How it is taxed is the {@link DeliveryTaxRule} the order was charged under:
+ *       {@code UNTAXED} — a line of its own at 0% (every order before 2026-11-26); {@code INCLUSIVE_COMPOSITE} — the
+ *       fee is GST-inclusive, shared across the seller's items by value, each share carved into taxable value + GST at
+ *       its item's rate (§17.13.11). The customer pays the fee either way; only paise of rounding can move.</li>
  * </ul>
  *
  * <p>Sellers are taken in order of their key, never in the order lines arrive: checkout lists them as
@@ -45,9 +47,34 @@ public final class OrderPricing {
         }
     }
 
-    /** One seller's part — exactly what their invoice will say. */
+    /**
+     * One item's part of a seller's GST-inclusive delivery fee ({@link DeliveryTaxRule#INCLUSIVE_COMPOSITE}).
+     *
+     * @param itemIndex   the item's position in the list the seller's part was priced from
+     * @param share       the fee shared to it, GST included
+     * @param taxable     the taxable value carved out of {@code share} at {@code ratePercent} — what the invoice prints
+     * @param ratePercent the item's rate; null = the share is not taxed and {@code taxable} equals it
+     */
+    public record DeliveryShare(int itemIndex, BigDecimal share, BigDecimal taxable, BigDecimal ratePercent) {}
+
+    /**
+     * One seller's part — exactly what their invoice will say.
+     *
+     * @param deliveryFee    the seller's share of the fee as the customer pays it (GST included under the composite rule)
+     * @param deliveryShares per item under {@link DeliveryTaxRule#INCLUSIVE_COMPOSITE}; empty under UNTAXED or with no fee
+     */
     public record SellerPart(String sellerKey, BigDecimal discount, BigDecimal deliveryFee,
-                             GstCalculator.Result amounts) {}
+                             GstCalculator.Result amounts, DeliveryTaxRule deliveryTaxRule,
+                             List<DeliveryShare> deliveryShares) {
+
+        /** What the delivery adds to the document's subtotal: the fee itself when untaxed, its taxable value otherwise. */
+        public BigDecimal deliveryTaxable() {
+            if (deliveryTaxRule != DeliveryTaxRule.INCLUSIVE_COMPOSITE || deliveryShares.isEmpty()) return deliveryFee;
+            BigDecimal t = BigDecimal.ZERO.setScale(2);
+            for (DeliveryShare d : deliveryShares) t = t.add(d.taxable());
+            return t;
+        }
+    }
 
     public record Priced(List<SellerPart> sellers, BigDecimal itemsSubtotal, BigDecimal discount,
                          BigDecimal deliveryFee, BigDecimal gstTotal, BigDecimal payable) {
@@ -55,6 +82,18 @@ public final class OrderPricing {
         public SellerPart seller(String key) {
             for (SellerPart p : sellers) if (p.sellerKey().equals(key)) return p;
             return null;
+        }
+
+        /**
+         * The GST to show BESIDE a delivery fee shown as the customer pays it: every GST on the order except what is
+         * already inside a GST-inclusive fee. So {@code itemsSubtotal − discount + deliveryFee + gstBesideFee}, plus the
+         * round-off, is {@code payable}, and a screen listing those rows adds up (owner, 2026-11-26: the customer sees
+         * "Delivery ₹20" as quoted; the invoice prints the legal split). Equals {@link #gstTotal} under UNTAXED.
+         */
+        public BigDecimal gstBesideFee() {
+            BigDecimal inside = BigDecimal.ZERO;
+            for (SellerPart p : sellers) inside = inside.add(p.deliveryFee().subtract(p.deliveryTaxable()));
+            return gstTotal.subtract(inside);
         }
     }
 
@@ -68,6 +107,13 @@ public final class OrderPricing {
      */
     public static Priced price(List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
                                java.util.function.Function<String, AmountRounding> roundingOfSeller) {
+        return price(items, discount, deliveryFee, roundingOfSeller, DeliveryTaxRule.UNTAXED);
+    }
+
+    /** The same, the delivery fee taxed by {@code rule} — the rule the order is charged, and later invoiced, under. */
+    public static Priced price(List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
+                               java.util.function.Function<String, AmountRounding> roundingOfSeller,
+                               DeliveryTaxRule rule) {
         Map<String, List<Item>> bySeller = new TreeMap<>();
         for (Item item : items) {
             bySeller.computeIfAbsent(item.sellerKey(), k -> new ArrayList<>()).add(item);
@@ -88,9 +134,9 @@ public final class OrderPricing {
         BigDecimal disc = BigDecimal.ZERO, delivery = BigDecimal.ZERO;
         for (int i = 0; i < keys.size(); i++) {
             SellerPart part = priceSeller(keys.get(i), bySeller.get(keys.get(i)), discounts.get(i), deliveries.get(i),
-                    false, null, roundingOfSeller.apply(keys.get(i)));
+                    false, null, roundingOfSeller.apply(keys.get(i)), rule);
             parts.add(part);
-            subtotal = subtotal.add(part.amounts().itemsSubtotal()).subtract(part.deliveryFee());
+            subtotal = subtotal.add(part.amounts().itemsSubtotal()).subtract(part.deliveryTaxable());
             gst = gst.add(part.amounts().gstTotal());
             payable = payable.add(part.amounts().payable());
             disc = disc.add(part.discount());
@@ -123,12 +169,78 @@ public final class OrderPricing {
      */
     public static SellerPart priceSeller(String sellerKey, List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
                                          boolean interstate, BigDecimal tcsPercent, AmountRounding rounding) {
+        return priceSeller(sellerKey, items, discount, deliveryFee, interstate, tcsPercent, rounding, DeliveryTaxRule.UNTAXED);
+    }
+
+    /**
+     * The same, the delivery fee taxed by {@code rule} — for a stored group, the rule stamped on it when it was charged.
+     * Under {@link DeliveryTaxRule#INCLUSIVE_COMPOSITE} the fee becomes one non-discountable line per item share (see
+     * {@link #deliveryShares}). GST is still computed once over the whole document, so how a document later GROUPS
+     * those lines for printing cannot move a paisa of it.
+     */
+    public static SellerPart priceSeller(String sellerKey, List<Item> items, BigDecimal discount, BigDecimal deliveryFee,
+                                         boolean interstate, BigDecimal tcsPercent, AmountRounding rounding,
+                                         DeliveryTaxRule rule) {
+        DeliveryTaxRule taxRule = java.util.Objects.requireNonNull(rule, "deliveryTaxRule");
         List<GstCalculator.Line> lines = new ArrayList<>();
         for (Item item : items) lines.add(new GstCalculator.Line(item.value(), item.ratePercent(), true));
         BigDecimal delivery = GstCalculator.paise(deliveryFee);
-        if (delivery.signum() != 0) lines.add(new GstCalculator.Line(delivery, null, false));
+        List<DeliveryShare> shares = List.of();
+        if (delivery.signum() != 0) {
+            if (taxRule == DeliveryTaxRule.INCLUSIVE_COMPOSITE && !items.isEmpty()) {
+                shares = deliveryShares(items, delivery);
+                for (DeliveryShare d : shares) lines.add(new GstCalculator.Line(d.taxable(), d.ratePercent(), false));
+            } else {
+                lines.add(new GstCalculator.Line(delivery, null, false));
+            }
+        }
         GstCalculator.Result r = GstCalculator.computeDiscountBeforeTax(lines, discount, interstate, tcsPercent, rounding);
-        return new SellerPart(sellerKey, GstCalculator.paise(discount), delivery, r);
+        return new SellerPart(sellerKey, GstCalculator.paise(discount), delivery, r, taxRule, shares);
+    }
+
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
+
+    /**
+     * A seller's GST-inclusive fee shared across its items by value, at paise, the last share taking the remainder;
+     * each share carved into taxable value at its item's rate ({@code share × 100 / (100 + rate)}, to paise).
+     *
+     * <p>⚠ "Last" is in a FIXED order — by rate, then value — never the order the lines arrive in: checkout lists them
+     * as the cart does and OMS as it saved them, and a remainder that followed either could put a paisa at a different
+     * rate on the invoice than it was charged at. Items equal in rate and value are interchangeable for the arithmetic.
+     * When the items are worth nothing in all (a free sample alone), the last takes the whole fee, so no fee is lost.
+     * Zero shares are left out. The result is in item order.
+     */
+    static List<DeliveryShare> deliveryShares(List<Item> items, BigDecimal fee) {
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) order.add(i);
+        order.sort((a, b) -> {
+            int c = rateOf(items.get(a)).compareTo(rateOf(items.get(b)));
+            return c != 0 ? c : items.get(a).value().compareTo(items.get(b).value());
+        });
+        List<BigDecimal> weights = new ArrayList<>();
+        for (int i : order) weights.add(items.get(i).value());
+        List<BigDecimal> split = share(fee, weights);
+        BigDecimal given = BigDecimal.ZERO;
+        for (BigDecimal s : split) given = given.add(s);
+        int last = split.size() - 1;
+        if (given.compareTo(fee) != 0) split.set(last, split.get(last).add(fee.subtract(given)));
+
+        List<DeliveryShare> out = new ArrayList<>();
+        for (int k = 0; k < order.size(); k++) {
+            BigDecimal s = split.get(k);
+            if (s.signum() == 0) continue;
+            Item item = items.get(order.get(k));
+            BigDecimal rate = item.ratePercent() != null && item.ratePercent().signum() > 0 ? item.ratePercent() : null;
+            BigDecimal taxable = rate == null ? s
+                    : s.multiply(HUNDRED).divide(HUNDRED.add(rate), 2, RoundingMode.HALF_UP);
+            out.add(new DeliveryShare(order.get(k), s, taxable, rate));
+        }
+        out.sort(java.util.Comparator.comparingInt(DeliveryShare::itemIndex));
+        return out;
+    }
+
+    private static BigDecimal rateOf(Item item) {
+        return item.ratePercent() == null || item.ratePercent().signum() < 0 ? BigDecimal.ZERO : item.ratePercent();
     }
 
     /** An amount shared out in proportion to the weights, at paise, the last share taking the remainder. */
